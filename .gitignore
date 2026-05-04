@@ -1,0 +1,48 @@
+# --- Ejecutables y Binarios ---
+# Ignora archivos sin extensión (comúnmente binarios de C++ en Linux)
+*
+!*/
+!*.*
+!Makefile
+!CMakeLists.txt
+
+# Extensiones de objetos y bibliotecas
+*.o
+*.obj
+*.out
+*.so
+*.a
+*.lib
+*.dll
+*.exe
+
+# --- Resultados y Datos ---
+# Ignora específicamente los archivos de datos
+*.csv
+*.dat
+*.log
+*.results
+
+# --- Directorios de Compilación ---
+build/
+bin/
+dist/
+.cache/
+
+# --- CUDA & Paralelo ---
+# Archivos temporales de compilación de NVIDIA
+*.i
+*.ii
+*.gpu
+*.ptx
+*.cubin
+*.fatbin
+
+# --- Entorno de Desarrollo (VS Code) ---
+.vscode/
+*.swp
+*.swo
+
+# --- Archivos de Sistema ---
+.DS_Store
+Thumbs.db

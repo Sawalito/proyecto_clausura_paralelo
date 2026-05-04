@@ -1,0 +1,9 @@
+# urls.txt - 6 libros de Shakespeare (replica el escenario del PDF)
+https://www.gutenberg.org/cache/epub/2243/pg2243.txt
+https://www.gutenberg.org/cache/epub/1513/pg1513.txt
+https://www.gutenberg.org/cache/epub/1524/pg1524.txt
+https://www.gutenberg.org/cache/epub/2243/pg2243.txt
+https://www.gutenberg.org/cache/epub/1513/pg1513.txt
+https://www.gutenberg.org/cache/epub/1524/pg1524.txthttps://www.gutenberg.org/cache/epub/100/pg100.txt
+https://www.gutenberg.org/cache/epub/1112/pg1112.txt
+https://www.gutenberg.org/cache/epub/1041/pg1041.txt
