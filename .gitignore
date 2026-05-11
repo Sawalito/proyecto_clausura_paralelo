@@ -5,6 +5,8 @@
 !*.*
 !Makefile
 !CMakeLists.txt
+!LICENSE
+!README
 
 # Extensiones de objetos y bibliotecas
 *.o
@@ -15,18 +17,34 @@
 *.lib
 *.dll
 *.exe
+*.dylib
+*.gch
+*.pch
+*.d
+
+# Core dumps y archivos de depuración
+core
+core.*
+*.stackdump
+vgcore.*
 
 # --- Resultados y Datos ---
-# Ignora específicamente los archivos de datos
+# Ignora específicamente los archivos de datos generados
 *.csv
 *.dat
 *.log
 *.results
+*.tsv
+
+# --- Cache del Proyecto ---
+.bow_cache/
+*.cache
 
 # --- Directorios de Compilación ---
 build/
 bin/
 dist/
+obj/
 .cache/
 
 # --- CUDA & Paralelo ---
@@ -38,11 +56,26 @@ dist/
 *.cubin
 *.fatbin
 
-# --- Entorno de Desarrollo (VS Code) ---
+# Archivos temporales de MPI
+*.btr
+
+# --- Entorno de Desarrollo ---
 .vscode/
+.idea/
+.claude/
 *.swp
 *.swo
+*.swn
+*~
+.*.kate-swp
 
 # --- Archivos de Sistema ---
 .DS_Store
 Thumbs.db
+desktop.ini
+
+# --- Backups y temporales ---
+*.bak
+*.tmp
+*.orig
+*.rej

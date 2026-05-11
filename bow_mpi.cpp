@@ -24,6 +24,7 @@
 #include "bow_common.hpp"
 #include <mpi.h>
 #include <algorithm>
+#include <cstdlib>
 #include <iostream>
 #include <fstream>
 #include <set>
@@ -35,6 +36,11 @@ int main(int argc, char** argv) {
     int rank, size;
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+    // BOW_VERBOSE=1 reactiva los prints por libro/rank. Por defecto se silencian:
+    // mpirun serializa stdout entre ranks, asi que la chatter anadia ~10-30 ms
+    // de wall-clock a cada corrida (notable cuando el computo total es ~0.4 s).
+    const bool verbose = std::getenv("BOW_VERBOSE") != nullptr;
 
     if (argc < 3) {
         if (rank == 0)
@@ -75,32 +81,66 @@ int main(int argc, char** argv) {
     }
 
     // =========================================================================
-    // FASE 2: Asignación local
+    // FASE 2: Asignación local con LPT (balanceo por tamanio de archivo)
+    // -------------------------------------------------------------------------
+    // Rank 0 hace stat sobre el cache para conocer el tamanio de cada libro,
+    // los broadcastea, y todos los ranks ejecutan LPT identicamente para
+    // saber que libros les tocan. Esto evita el caso patologico de la version
+    // anterior (Shakespeare completo, 5MB, caia en un solo rank).
     // =========================================================================
-    int per_proc  = k / size;
-    int remainder = k % size;
-    int local_k   = per_proc + (rank < remainder ? 1 : 0);
-    int start     = rank * per_proc + std::min(rank, remainder);
+    std::vector<long long> book_sizes(k, 0);
+    if (rank == 0) {
+        for (int i = 0; i < k; ++i)
+            book_sizes[i] = static_cast<long long>(cached_file_size(urls[i], cache_dir));
+    }
+    MPI_Bcast(book_sizes.data(), k, MPI_LONG_LONG, 0, MPI_COMM_WORLD);
 
-    if (rank == 0)
+    std::vector<size_t> sz_vec(k);
+    for (int i = 0; i < k; ++i) sz_vec[i] = static_cast<size_t>(book_sizes[i]);
+    std::vector<int> owners = lpt_assign(sz_vec, size);
+
+    std::vector<int> my_indices;
+    my_indices.reserve(k / size + 1);
+    for (int i = 0; i < k; ++i) if (owners[i] == rank) my_indices.push_back(i);
+    int local_k = static_cast<int>(my_indices.size());
+
+    if (rank == 0) {
+        long long total_sz = 0;
+        for (auto s : book_sizes) total_sz += s;
         std::cout << "[MPI] q=" << size << " procesos, k=" << k
                   << " libros, cache=" << (cache_dir.empty() ? "(off)" : cache_dir)
+                  << ", balanceo=" << (total_sz > 0 ? "LPT" : "contiguo")
                   << "\n";
-    std::cout << "[Rank " << rank << "] libros [" << start
-              << ", " << (start + local_k) << ")\n";
+    }
+    if (verbose) {
+        std::string idx_str;
+        for (size_t i = 0; i < my_indices.size(); ++i) {
+            if (i) idx_str += ",";
+            idx_str += std::to_string(my_indices[i]);
+        }
+        std::cout << "[Rank " << rank << "] libros {" << idx_str << "}\n";
+    }
 
     // =========================================================================
     // FASE 3: DESCARGA LOCAL (medida aparte)
+    // -------------------------------------------------------------------------
+    // Las MPI_Barrier alrededor de cada fase solo servian para "alinear"
+    // mediciones por fase. Como reducimos cada t_*_local con MPI_MAX, el
+    // wall-clock total no se pierde si las quitamos, y ahorramos sincronizacion.
     // =========================================================================
-    MPI_Barrier(MPI_COMM_WORLD);
     double t_dl_start = MPI_Wtime();
 
     std::vector<std::string> raw_texts(local_k);
     for (int i = 0; i < local_k; ++i) {
-        raw_texts[i] = download_url_cached(urls[start + i], cache_dir);
+        double td0 = MPI_Wtime();
+        raw_texts[i] = download_url_cached(urls[my_indices[i]], cache_dir);
+        double td1 = MPI_Wtime();
+        if (verbose) {
+            std::cout << "[Rank " << rank << "] book " << my_indices[i]
+                      << " dl=" << (td1 - td0) << "s " << urls[my_indices[i]] << "\n";
+        }
     }
 
-    MPI_Barrier(MPI_COMM_WORLD);
     double t_dl_end = MPI_Wtime();
 
     // =========================================================================
@@ -116,17 +156,32 @@ int main(int argc, char** argv) {
     std::unordered_set<std::string> local_vocab_set;
     local_vocab_set.reserve(20000);
     for (int i = 0; i < local_k; ++i) {
+        double tt0 = MPI_Wtime();
         local_counts[i] = tokenize_and_count_fast(raw_texts[i]);
+        double tt1 = MPI_Wtime();
         for (const auto& kv : local_counts[i])
             local_vocab_set.insert(kv.first);
+        if (verbose) {
+            std::cout << "[Rank " << rank << "] book " << my_indices[i]
+                      << " tk=" << (tt1 - tt0) << "s unique=" << local_counts[i].size() << "\n";
+        }
     }
 
     double t_cp_local_end = MPI_Wtime();
 
-    // Vocabulario global: Gatherv -> unión en rank 0 -> Bcast
-    std::vector<std::string> lvv(local_vocab_set.begin(),
-                                 local_vocab_set.end());
-    std::vector<char> lvb = serialize_strings(lvv);
+    // Vocabulario global: Gatherv -> union en rank 0 -> Bcast.
+    // Serializamos directo desde el set para evitar copiarlo a un vector
+    // intermedio (era una copia de ~600 KB de strings sin necesidad).
+    std::vector<char> lvb;
+    {
+        size_t total = 0;
+        for (const auto& w : local_vocab_set) total += w.size() + 1;
+        lvb.reserve(total);
+        for (const auto& w : local_vocab_set) {
+            lvb.insert(lvb.end(), w.begin(), w.end());
+            lvb.push_back('\0');
+        }
+    }
     int lvbs = static_cast<int>(lvb.size());
 
     std::vector<int> rc(size), dp(size);
@@ -177,18 +232,37 @@ int main(int argc, char** argv) {
         }
     }
 
-    MPI_Barrier(MPI_COMM_WORLD);
     double t_cp_end = MPI_Wtime();
 
     // =========================================================================
     // FASE 7: Gatherv de filas al rank 0
+    // -------------------------------------------------------------------------
+    // Cada rank tiene local_k filas correspondientes a indices NO contiguos
+    // (my_indices). Hacemos dos Gatherv (indices y filas) y rank 0 reordena
+    // por indice original para que el CSV salga en el orden de urls.txt y
+    // coincida bit-a-bit con la version serial.
     // =========================================================================
     std::vector<int> all_local_k(size);
     MPI_Gather(&local_k, 1, MPI_INT, all_local_k.data(), 1, MPI_INT,
                0, MPI_COMM_WORLD);
 
+    std::vector<int> idx_counts(size), idx_displs(size);
+    std::vector<int> all_indices;
+    if (rank == 0) {
+        int t = 0;
+        for (int i = 0; i < size; ++i) {
+            idx_counts[i] = all_local_k[i];
+            idx_displs[i] = t;
+            t            += idx_counts[i];
+        }
+        all_indices.resize(t);
+    }
+    MPI_Gatherv(my_indices.data(), local_k, MPI_INT,
+                all_indices.data(), idx_counts.data(), idx_displs.data(), MPI_INT,
+                0, MPI_COMM_WORLD);
+
     std::vector<int> mc(size), md(size);
-    std::vector<int> global_matrix;
+    std::vector<int> gathered;
     if (rank == 0) {
         int t = 0;
         for (int i = 0; i < size; ++i) {
@@ -196,11 +270,26 @@ int main(int argc, char** argv) {
             md[i] = t;
             t    += mc[i];
         }
-        global_matrix.resize(t);
+        gathered.resize(t);
     }
     MPI_Gatherv(local_matrix.data(), local_k * V, MPI_INT,
-                global_matrix.data(), mc.data(), md.data(), MPI_INT,
+                gathered.data(), mc.data(), md.data(), MPI_INT,
                 0, MPI_COMM_WORLD);
+
+    std::vector<int> global_matrix;
+    if (rank == 0) {
+        global_matrix.assign(static_cast<size_t>(k) * V, 0);
+        int gathered_row = 0;
+        for (int r = 0; r < size; ++r) {
+            for (int b = 0; b < all_local_k[r]; ++b) {
+                int orig = all_indices[idx_displs[r] + b];
+                const int* src = gathered.data() + static_cast<size_t>(gathered_row) * V;
+                int* dst       = global_matrix.data() + static_cast<size_t>(orig) * V;
+                std::copy(src, src + V, dst);
+                ++gathered_row;
+            }
+        }
+    }
 
     // =========================================================================
     // FASE 8: Escritura del CSV (buffer en memoria, escrito en un solo write)
@@ -223,7 +312,6 @@ int main(int argc, char** argv) {
         std::ofstream out(argv[2], std::ios::binary);
         out.write(csv.data(), csv.size());
     }
-    MPI_Barrier(MPI_COMM_WORLD);
     double t_io_end = MPI_Wtime();
 
     curl_global_cleanup();

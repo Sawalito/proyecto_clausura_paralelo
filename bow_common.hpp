@@ -89,6 +89,62 @@ inline std::string url_to_cache_path(const std::string& url,
     return cache_dir + "/" + std::to_string(hasher(url)) + ".cache";
 }
 
+// Tamanio del archivo cacheado (0 si no existe o no hay cache). Usado por la
+// asignacion LPT para balancear carga en MPI.
+inline size_t cached_file_size(const std::string& url,
+                               const std::string& cache_dir) {
+    if (cache_dir.empty()) return 0;
+    std::error_code ec;
+    auto sz = std::filesystem::file_size(url_to_cache_path(url, cache_dir), ec);
+    if (ec) return 0;
+    return static_cast<size_t>(sz);
+}
+
+// -----------------------------------------------------------------------------
+// LPT (Longest Processing Time): asigna libros a procesos minimizando makespan.
+// Ordena por tamanio descendente y greedy-asigna cada uno al proceso con menor
+// carga acumulada. Para k libros y q procesos el makespan resultante es
+// <= (4/3 - 1/(3q)) * optimo.
+//
+// Si el tamanio total es 0 (no hay cache), retorna una asignacion contigua
+// equivalente al esquema per_proc + remainder original.
+// -----------------------------------------------------------------------------
+inline std::vector<int> lpt_assign(const std::vector<size_t>& sizes, int q) {
+    int k = static_cast<int>(sizes.size());
+    std::vector<int> owners(k, 0);
+
+    size_t total = 0;
+    for (size_t s : sizes) total += s;
+
+    if (total == 0 || q <= 1) {
+        // Fallback: contigua (equivalente al esquema original)
+        int per_proc  = k / q;
+        int remainder = k % q;
+        for (int r = 0, idx = 0; r < q; ++r) {
+            int lk = per_proc + (r < remainder ? 1 : 0);
+            for (int j = 0; j < lk; ++j) owners[idx++] = r;
+        }
+        return owners;
+    }
+
+    // Sort indices by size DESC, tie-break by indice ASC (determinista)
+    std::vector<int> idx(k);
+    for (int i = 0; i < k; ++i) idx[i] = i;
+    std::sort(idx.begin(), idx.end(), [&](int a, int b) {
+        if (sizes[a] != sizes[b]) return sizes[a] > sizes[b];
+        return a < b;
+    });
+
+    std::vector<size_t> load(q, 0);
+    for (int i : idx) {
+        int r = 0;
+        for (int j = 1; j < q; ++j) if (load[j] < load[r]) r = j;
+        owners[i] = r;
+        load[r] += sizes[i];
+    }
+    return owners;
+}
+
 inline std::string download_url_cached(const std::string& url,
                                        const std::string& cache_dir) {
     if (cache_dir.empty()) return download_url(url);
@@ -179,6 +235,10 @@ tokenize_and_count_fast(const std::string& raw_text) {
 // -----------------------------------------------------------------------------
 inline std::vector<std::string> read_urls(const std::string& filename) {
     std::vector<std::string> urls;
+    if (filename.rfind("http://", 0) == 0 || filename.rfind("https://", 0) == 0) {
+        urls.push_back(filename);
+        return urls;
+    }
     std::ifstream file(filename);
     if (!file.is_open()) {
         std::cerr << "No pude abrir " << filename << std::endl;

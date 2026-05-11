@@ -53,9 +53,11 @@ int main(int argc, char** argv) {
     auto t_dl_start = clk::now();
     std::vector<std::string> raw_texts(k);
     for (int i = 0; i < k; ++i) {
-        std::cout << "[Serial] (" << (i + 1) << "/" << k << ") "
-                  << urls[i] << "\n";
+        auto td0 = clk::now();
         raw_texts[i] = download_url_cached(urls[i], cache_dir);
+        auto td1 = clk::now();
+        std::cout << "[Serial] (" << (i + 1) << "/" << k << ") dl="
+                  << secs(td0, td1) << "s " << urls[i] << "\n";
     }
     auto t_dl_end = clk::now();
 
@@ -68,8 +70,12 @@ int main(int argc, char** argv) {
     vocab_set.reserve(50000);
 
     for (int i = 0; i < k; ++i) {
+        auto tt0 = clk::now();
         book_counts[i] = tokenize_and_count_fast(raw_texts[i]);
+        auto tt1 = clk::now();
         for (const auto& kv : book_counts[i]) vocab_set.insert(kv.first);
+        std::cout << "[Serial] (" << (i + 1) << "/" << k << ") tk="
+                  << secs(tt0, tt1) << "s unique=" << book_counts[i].size() << "\n";
     }
     // Ordenar lex al final: más rápido que std::set durante la inserción.
     std::vector<std::string> vocab(vocab_set.begin(), vocab_set.end());
