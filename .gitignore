@@ -1,48 +1,35 @@
-# --- Ejecutables y Binarios ---
-# Ignora archivos sin extensión (comúnmente binarios de C++ en Linux)
-*
-!*/
-!*.*
-!Makefile
-!CMakeLists.txt
+# Ejecutables generados por el proyecto
+bow_serial
+bow_mpi
 
-# Extensiones de objetos y bibliotecas
+# Objetos y binarios temporales de compilacion
 *.o
 *.obj
 *.out
-*.so
-*.a
-*.lib
-*.dll
 *.exe
 
-# --- Resultados y Datos ---
-# Ignora específicamente los archivos de datos
+# Resultados generados
+Results/*.csv
+!Results/.gitkeep
 *.csv
-*.dat
 *.log
-*.results
+logs
+logs/
 
-# --- Directorios de Compilación ---
+# Cache local de descargas
+.bow_cache/
+.cache/
+
+# Directorios de compilacion
 build/
 bin/
 dist/
-.cache/
 
-# --- CUDA & Paralelo ---
-# Archivos temporales de compilación de NVIDIA
-*.i
-*.ii
-*.gpu
-*.ptx
-*.cubin
-*.fatbin
-
-# --- Entorno de Desarrollo (VS Code) ---
-.vscode/
+# Archivos temporales de editores y sistema
+*~
 *.swp
 *.swo
-
-# --- Archivos de Sistema ---
+.vscode/
+.idea/
 .DS_Store
 Thumbs.db

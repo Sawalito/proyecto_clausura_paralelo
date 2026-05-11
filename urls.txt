@@ -1,9 +1,27 @@
-# urls.txt - 6 libros de Shakespeare (replica el escenario del PDF)
+# urls.txt
+# Textos de Project Gutenberg usados para el benchmark.
+# Son obras de Shakespeare en formato plain text UTF-8. Algunas URLs se
+# repiten para aumentar el numero de documentos sin cambiar el corpus base.
+
+# The Merchant of Venice (Project Gutenberg ID 2243)
+https://www.gutenberg.org/cache/epub/2243/pg2243.txt
+
+# Romeo and Juliet (Project Gutenberg ID 1513)
+https://www.gutenberg.org/cache/epub/1513/pg1513.txt
+
+# Hamlet (Project Gutenberg ID 1524)
+https://www.gutenberg.org/cache/epub/1524/pg1524.txt
+
+# Repeticiones controladas para el benchmark
 https://www.gutenberg.org/cache/epub/2243/pg2243.txt
 https://www.gutenberg.org/cache/epub/1513/pg1513.txt
 https://www.gutenberg.org/cache/epub/1524/pg1524.txt
-https://www.gutenberg.org/cache/epub/2243/pg2243.txt
-https://www.gutenberg.org/cache/epub/1513/pg1513.txt
-https://www.gutenberg.org/cache/epub/1524/pg1524.txthttps://www.gutenberg.org/cache/epub/100/pg100.txt
+
+# The Complete Works of William Shakespeare (Project Gutenberg ID 100)
+https://www.gutenberg.org/cache/epub/100/pg100.txt
+
+# Romeo and Juliet, alternate Gutenberg text (Project Gutenberg ID 1112)
 https://www.gutenberg.org/cache/epub/1112/pg1112.txt
+
+# Shakespeare's Sonnets (Project Gutenberg ID 1041)
 https://www.gutenberg.org/cache/epub/1041/pg1041.txt
