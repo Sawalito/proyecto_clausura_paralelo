@@ -1,0 +1,30 @@
+# urls_extended.txt - 24 libros de Project Gutenberg, mezcla amplia.
+# Incluye los 12 del urls.txt original + 12 nuevos para duplicar el dataset
+# y tener mas variedad de tamanios (~50 KB a ~5 MB).
+#
+# Originales:
+https://www.gutenberg.org/cache/epub/1342/pg1342.txt
+https://www.gutenberg.org/cache/epub/11/pg11.txt
+https://www.gutenberg.org/cache/epub/84/pg84.txt
+https://www.gutenberg.org/cache/epub/345/pg345.txt
+https://www.gutenberg.org/cache/epub/1661/pg1661.txt
+https://www.gutenberg.org/cache/epub/174/pg174.txt
+https://www.gutenberg.org/cache/epub/768/pg768.txt
+https://www.gutenberg.org/cache/epub/2701/pg2701.txt
+https://www.gutenberg.org/cache/epub/2554/pg2554.txt
+https://www.gutenberg.org/cache/epub/1232/pg1232.txt
+https://www.gutenberg.org/cache/epub/5200/pg5200.txt
+https://www.gutenberg.org/cache/epub/100/pg100.txt
+# Nuevos: clasicos variados
+https://www.gutenberg.org/cache/epub/76/pg76.txt
+https://www.gutenberg.org/cache/epub/74/pg74.txt
+https://www.gutenberg.org/cache/epub/1400/pg1400.txt
+https://www.gutenberg.org/cache/epub/98/pg98.txt
+https://www.gutenberg.org/cache/epub/46/pg46.txt
+https://www.gutenberg.org/cache/epub/35/pg35.txt
+https://www.gutenberg.org/cache/epub/36/pg36.txt
+https://www.gutenberg.org/cache/epub/158/pg158.txt
+https://www.gutenberg.org/cache/epub/219/pg219.txt
+https://www.gutenberg.org/cache/epub/244/pg244.txt
+https://www.gutenberg.org/cache/epub/514/pg514.txt
+https://www.gutenberg.org/cache/epub/2600/pg2600.txt
