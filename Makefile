@@ -8,6 +8,8 @@ CXXFLAGS ?= -O3 -march=native -std=c++17 -Wall -Wextra
 MPICXXFLAGS ?= $(CXXFLAGS) -DOMPI_SKIP_MPICXX
 LDLIBS ?= -lcurl
 
+# Defaults para los targets de benchmark. Se pueden sobreescribir:
+#   make benchmark NPROC=3 URLS=tests/short.txt
 NPROC ?= 4
 URLS ?= urls.txt
 QS ?= 1 2 4 6 8
@@ -25,9 +27,11 @@ serial: bow_serial
 
 mpi: bow_mpi
 
+# Regla de compilacion del serial. $@ = nombre del target, $< = primer prereq.
 bow_serial: bow_serial.cpp bow_common.hpp
 	$(CXX) $(CXXFLAGS) -o $@ $< $(LDLIBS)
 
+# Regla MPI. mpic++ es un wrapper sobre g++ que inyecta -I/-L/-lmpi.
 bow_mpi: bow_mpi.cpp bow_common.hpp
 	$(MPICXX) $(MPICXXFLAGS) -o $@ $< $(LDLIBS)
 
@@ -59,8 +63,10 @@ format:
 	@command -v clang-format >/dev/null 2>&1 || { echo "Falta clang-format"; exit 1; }
 	clang-format -i $(SOURCES)
 
+# Limpia ejecutables y outputs intermedios; NO toca el cache de libros.
 clean:
 	rm -f bow_serial bow_mpi *.o $(RESULTS_DIR)/*.csv
 
+# Borra el cache de descargas. Forzara redescarga real en la siguiente corrida.
 cache_clean:
 	rm -rf .bow_cache

@@ -7,6 +7,16 @@ bow_mpi
 *.obj
 *.out
 *.exe
+*.dylib
+*.gch
+*.pch
+*.d
+
+# Core dumps y archivos de depuración
+core
+core.*
+*.stackdump
+vgcore.*
 
 # Resultados generados
 Results/*.csv

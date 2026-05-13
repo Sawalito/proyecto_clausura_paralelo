@@ -1,0 +1,12 @@
+# urls_extended.txt - 24 libros de Project Gutenberg, mezcla amplia.
+# Incluye los 12 del urls.txt original + 12 nuevos para duplicar el dataset
+# y tener mas variedad de tamanios (~50 KB a ~5 MB).
+#
+# Originales:
+https://www.gutenberg.org/cache/epub/84/pg84.txt
+https://www.gutenberg.org/cache/epub/2701/pg2701.txt
+https://www.gutenberg.org/cache/epub/1342/pg1342.txt
+https://www.gutenberg.org/cache/epub/1184/pg1184.txt
+https://www.gutenberg.org/cache/epub/1513/pg1513.txt
+https://www.gutenberg.org/cache/epub/25851/pg25851.txt
+https://www.gutenberg.org/cache/epub/2554/pg2554.txt

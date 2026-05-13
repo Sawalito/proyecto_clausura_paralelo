@@ -38,6 +38,13 @@ int main(int argc, char **argv) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
+    // BOW_VERBOSE=1 reactiva los prints por libro/rank. Por defecto los
+    // silenciamos porque mpirun serializa stdout entre ranks, y la chatter
+    // anadia ~10-30 ms de wall-clock a cada corrida (notable cuando el
+    // computo total puede ser ~0.4 s con cache caliente).
+    const bool verbose = std::getenv("BOW_VERBOSE") != nullptr;
+
+    // Validacion: solo rank 0 imprime el error para no spamear.
     if (argc < 3) {
         if (rank == 0) {
             std::cerr << "Uso: mpirun -np <q> " << argv[0]
@@ -53,6 +60,9 @@ int main(int argc, char **argv) {
     const bool verbose = std::getenv("BOW_VERBOSE") != nullptr;
 
     curl_global_init(CURL_GLOBAL_DEFAULT);
+
+    // Barrier inicial para que todos los ranks empiecen a medir desde el
+    // mismo punto (de lo contrario los rezagados arrastrarian un offset).
     MPI_Barrier(MPI_COMM_WORLD);
     double t_start = MPI_Wtime();
 
@@ -97,6 +107,7 @@ int main(int argc, char **argv) {
     if (rank == 0) {
         std::cout << "[MPI] q=" << size << " procesos, k=" << k
                   << " libros, cache=" << (cache_dir.empty() ? "(off)" : cache_dir)
+                  << ", balanceo=" << (total_sz > 0 ? "LPT" : "contiguo")
                   << "\n";
     }
 
@@ -127,8 +138,6 @@ int main(int argc, char **argv) {
                       << (global_i + 1) << ": " << urls[global_i] << "\n";
         }
     }
-
-    MPI_Barrier(MPI_COMM_WORLD);
     double t_dl_end = MPI_Wtime();
 
     int total_empty_downloads = 0;
@@ -152,9 +161,15 @@ int main(int argc, char **argv) {
     std::unordered_set<std::string> local_vocab_set;
     local_vocab_set.reserve(20000);
     for (int i = 0; i < local_k; ++i) {
+        double tt0 = MPI_Wtime();
         local_counts[i] = tokenize_and_count_fast(raw_texts[i]);
         for (const auto &kv : local_counts[i])
             local_vocab_set.insert(kv.first);
+        if (verbose) {
+            std::cout << "[Rank " << rank << "] book " << my_indices[i]
+                      << " tk=" << (tt1 - tt0)
+                      << "s unique=" << local_counts[i].size() << "\n";
+        }
     }
 
     double t_tokenize_end = MPI_Wtime();
@@ -225,6 +240,9 @@ int main(int argc, char **argv) {
     for (int j = 0; j < V; ++j)
         word_to_idx[global_vocab[j]] = j;
 
+    // Matriz parcial: local_k filas x V columnas, en orden de `my_indices`.
+    // Cuidado: el orden NO es por indice original todavia; eso se reordena
+    // en rank 0 mas adelante usando all_indices.
     std::vector<int> local_matrix(static_cast<size_t>(local_k) * V, 0);
     for (int i = 0; i < local_k; ++i) {
         for (const auto &kv : local_counts[i]) {
@@ -268,6 +286,8 @@ int main(int argc, char **argv) {
     if (rank == 0) {
         std::string csv;
         csv.reserve(static_cast<size_t>(k) * V * 4 + 100000);
+
+        // Header con vocabulario global.
         csv.append("book_id");
         for (const auto &w : global_vocab) {
             csv.push_back(',');
@@ -346,6 +366,8 @@ int main(int argc, char **argv) {
         std::cout << "[MPI] CSV:                " << output_file << "\n";
     }
 
+    // MPI_Finalize: cierra el entorno MPI. Despues de esto no se puede
+    // llamar a ninguna funcion MPI_*.
     MPI_Finalize();
     return write_failed ? 1 : 0;
 }

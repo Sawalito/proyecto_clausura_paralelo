@@ -15,6 +15,9 @@
 
 set -euo pipefail
 
+# Parametros con default:
+#   $1 -> archivo de URLs (default: urls.txt)
+#   $2 -> lista de procesos a probar entre comillas (default: "1 2 4 6 8")
 URLS="${1:-urls.txt}"
 QS="${2:-1 2 4 6 8}"
 CACHE_DIR="${CACHE_DIR:-.bow_cache}"

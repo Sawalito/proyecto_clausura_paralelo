@@ -16,6 +16,7 @@
 #include <unordered_set>
 #include <vector>
 
+// Alias corto para el reloj de alta resolucion.
 using clk = std::chrono::high_resolution_clock;
 
 inline double secs(clk::time_point a, clk::time_point b) {
@@ -32,6 +33,7 @@ int main(int argc, char **argv) {
     const std::string output_file = argv[2];
     const std::string cache_dir = (argc >= 4) ? argv[3] : "";
 
+    // libcurl exige init/cleanup globales para inicializar SSL, threads, etc.
     curl_global_init(CURL_GLOBAL_DEFAULT);
     auto t_start = clk::now();
 
@@ -70,11 +72,17 @@ int main(int argc, char **argv) {
 
     // Fase 3: tokenizacion, vocabulario global y matriz BoW.
     auto t_cp_start = clk::now();
+
+    // book_counts[i]  -> hashmap palabra -> frecuencia para el libro i.
     std::vector<std::unordered_map<std::string, int>> book_counts(k);
+
+    // vocab_set       -> union de todas las palabras vistas en cualquier libro.
+    // Usamos un set hash, luego lo ordenamos al final (mas barato que std::set).
     std::unordered_set<std::string> vocab_set;
     vocab_set.reserve(50000);
 
     for (int i = 0; i < k; ++i) {
+        auto tt0 = clk::now();
         book_counts[i] = tokenize_and_count_fast(raw_texts[i]);
         for (const auto &kv : book_counts[i])
             vocab_set.insert(kv.first);

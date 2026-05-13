@@ -89,6 +89,7 @@ inline std::string download_url(const std::string &url) {
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 30L);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 120L);
 
+    // curl_easy_perform bloquea hasta que la descarga termine (o falle).
     CURLcode res = curl_easy_perform(curl);
     long http_code = 0;
     curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
@@ -154,6 +155,7 @@ inline std::string download_url_cached(const std::string &url,
     if (!cached.empty())
         return cached;
 
+    // Cache miss: descargamos y guardamos antes de retornar.
     std::string content = download_url(url);
     if (content.empty())
         return content;
@@ -213,12 +215,14 @@ inline std::string strip_gutenberg_metadata(const std::string &text) {
     static const std::string end_tag = "*** END OF";
 
     std::string body = text;
+    // Saltamos hasta despues del fin de linea de "*** START OF ... ***".
     size_t s = text.find(start_tag);
     if (s != std::string::npos) {
         size_t nl = text.find('\n', s);
         if (nl != std::string::npos)
             body = text.substr(nl + 1);
     }
+    // Cortamos en "*** END OF" para descartar el footer.
     size_t e = body.find(end_tag);
     if (e != std::string::npos)
         body = body.substr(0, e);
@@ -256,7 +260,7 @@ tokenize_and_count_fast(const std::string &raw_text) {
         }
 
         if (token.size() > 1 || token == "a" || token == "i") {
-            ++counts[token];
+            ++counts[token];  // operator[] inserta con 0 si no existe
         }
     }
     return counts;
@@ -266,6 +270,13 @@ tokenize_and_count_fast(const std::string &raw_text) {
 // al inicio/final y advierte lineas sospechosas sin detener todo el programa.
 inline std::vector<std::string> read_urls(const std::string &filename) {
     std::vector<std::string> urls;
+
+    // Caso especial: pasaron una URL directa en vez de un archivo.
+    if (filename.rfind("http://", 0) == 0 || filename.rfind("https://", 0) == 0) {
+        urls.push_back(filename);
+        return urls;
+    }
+
     std::ifstream file(filename);
     if (!file.is_open()) {
         std::cerr << "[urls] No se pudo abrir " << filename << "\n";
@@ -326,6 +337,7 @@ inline std::vector<std::string> deserialize_strings(const std::vector<char> &buf
     cur.reserve(64);
     for (char c : buf) {
         if (c == '\0') {
+            // Fin de palabra: la movemos al vector (move evita la copia).
             out.push_back(std::move(cur));
             cur.clear();
             cur.reserve(64);
