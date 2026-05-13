@@ -1,144 +1,166 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================================================
 # run_benchmark.sh
 # -----------------------------------------------------------------------------
-# Mide el speed-up de bow_mpi vs bow_serial sobre una lista de URLs.
-#
-# Estrategia para que el benchmark sea reproducible:
-#   1. Warm-up: corremos el serial UNA vez con un cache_dir para que TODOS
-#               los libros queden en disco. Si el cache ya existe, se salta.
-#   2. Baseline: corrida del serial CON cache. Asi medimos solo computo
-#                (descarga se sirve del disco -> ~0 s).
-#   3. Sweep: por cada q de la lista, corrida del MPI CON cache.
-#   4. Reporta speed-up total y speed-up de computo (este es el acotado
-#      por la Ley de Amdahl; el total puede dar superlineal porque la
-#      descarga real se paralelizo).
+# Compara bow_serial contra bow_mpi usando cache local para reducir ruido de red.
 #
 # Uso:
-#   bash run_benchmark.sh                       # sweep en {1,2,4,6,8}
-#   bash run_benchmark.sh urls.txt              # archivo custom
-#   bash run_benchmark.sh urls.txt "1 2 4 8"    # qs custom
-#   bash run_benchmark.sh urls.txt "3"          # un solo q (ej. 3 procesos)
+#   bash run_benchmark.sh
+#   bash run_benchmark.sh urls.txt
+#   bash run_benchmark.sh urls.txt "1 2 4 8"
 #
-# Salida:
-#   - bow_serial.csv          -> matriz BoW de referencia
-#   - bow_mpi.csv             -> matriz BoW de la ultima corrida MPI
-#   - benchmark_results.csv   -> tabla con tiempos y speed-ups por q
+# OpenMPI puede necesitar --oversubscribe en laptops. Se puede cambiar con:
+#   MPIRUN_EXTRA_ARGS="" bash run_benchmark.sh
 # =============================================================================
 
-# set -e: abortar al primer error de comando (mejor que arrastrar fallas).
-set -e
+set -euo pipefail
 
 # Parametros con default:
 #   $1 -> archivo de URLs (default: urls.txt)
 #   $2 -> lista de procesos a probar entre comillas (default: "1 2 4 6 8")
 URLS="${1:-urls.txt}"
 QS="${2:-1 2 4 6 8}"
-CACHE_DIR=".bow_cache"
+CACHE_DIR="${CACHE_DIR:-.bow_cache}"
+RESULTS_DIR="${RESULTS_DIR:-Results}"
+SERIAL_CSV="$RESULTS_DIR/bow_serial.csv"
+MPI_CSV="$RESULTS_DIR/bow_mpi.csv"
+RESULTS_CSV="$RESULTS_DIR/benchmark_results.csv"
+MPIRUN_EXTRA_ARGS="${MPIRUN_EXTRA_ARGS:---oversubscribe}"
+WARMUP_CSV="${TMPDIR:-/tmp}/bow_warmup_$$.csv"
 
-# Validacion temprana: si no existe el archivo de URLs, salir con error.
-[ ! -f "$URLS" ] && { echo "No existe $URLS"; exit 1; }
+trap 'rm -f "$WARMUP_CSV"' EXIT
 
-# extract: parsea una linea tipo "[Serial] Tiempo computo: 0.123 s" y
-# extrae solamente el numero. Permite notacion cientifica (1.23e-04).
-#   $1 = salida completa del binario
-#   $2 = etiqueta del campo a buscar (e.g. "Tiempo computo")
-extract() {
-    grep "$2" <<< "$1" | grep -oE '[0-9]+\.[0-9]+([eE][+-]?[0-9]+)?' | head -1
+fail() {
+    echo "ERROR: $*" >&2
+    exit 1
 }
 
-# extract_int: similar a extract pero captura un entero (sin punto decimal).
-# Util para "Vocabulario: 49786 palabras".
-extract_int() {
-    grep "$2" <<< "$1" | grep -oE '[0-9]+' | head -1
+need_command() {
+    command -v "$1" >/dev/null 2>&1 || fail "Falta la dependencia: $1"
 }
+
+need_executable() {
+    [ -x "$1" ] || fail "No existe o no es ejecutable: $1. Ejecuta make all."
+}
+
+extract_time() {
+    local output="$1"
+    local label="$2"
+    grep -F "$label" <<< "$output" \
+        | grep -oE '[0-9]+([.][0-9]+)?([eE][+-]?[0-9]+)?' \
+        | head -1 || true
+}
+
+require_time() {
+    local value="$1"
+    local name="$2"
+    [ -n "$value" ] || fail "No se pudo extraer el tiempo: $name"
+}
+
+ratio() {
+    local numerator="$1"
+    local denominator="$2"
+    local positive
+    positive=$(echo "$denominator > 0" | bc -l)
+    if [ "$positive" != "1" ]; then
+        echo "nan"
+    else
+        echo "scale=6; $numerator / $denominator" | bc -l
+    fi
+}
+
+[ -f "$URLS" ] || fail "No existe el archivo de URLs: $URLS"
+mkdir -p "$RESULTS_DIR"
+
+need_command mpirun
+need_command bc
+need_command diff
+need_executable ./bow_serial
+need_executable ./bow_mpi
 
 echo "============================================="
 echo " Benchmark Bag of Words: serial vs MPI"
 echo "  URLs:  $URLS"
 echo "  q:     $QS"
 echo "  cache: $CACHE_DIR"
+echo "  out:   $RESULTS_DIR"
 echo "============================================="
 
-# ---------------------------------------------------------------------------
-# WARM-UP: si el cache no existe o esta vacio, lo poblamos descargando todos
-# los libros UNA vez. Si ya hay cache de una corrida previa, lo reusamos.
-# La salida del warm-up no se reporta como medicion.
-# ---------------------------------------------------------------------------
-if [ ! -d "$CACHE_DIR" ] || [ -z "$(ls -A "$CACHE_DIR" 2>/dev/null)" ]; then
-    echo ""
-    echo ">>> Warm-up (descarga inicial al cache)"
-    ./bow_serial "$URLS" /tmp/warmup.csv "$CACHE_DIR" > /dev/null
-    echo "  Cache poblado: $(ls "$CACHE_DIR" | wc -l) archivos"
-fi
-
-# ---------------------------------------------------------------------------
-# BASELINE SERIAL con cache (mide computo puro).
-# Las tres ultimas lineas de la salida tienen los tiempos que nos importan.
-# ---------------------------------------------------------------------------
 echo ""
-echo ">>> SERIAL (con cache, mide cómputo puro)"
-SERIAL_OUT=$(./bow_serial "$URLS" bow_serial.csv "$CACHE_DIR")
+echo ">>> Warm-up: asegura cache local"
+if ! ./bow_serial "$URLS" "$WARMUP_CSV" "$CACHE_DIR" >/dev/null; then
+    fail "El warm-up serial fallo; revisa URLs, red o libcurl."
+fi
+cache_files=$(find "$CACHE_DIR" -maxdepth 1 -type f 2>/dev/null | wc -l)
+echo "  Cache disponible: $cache_files archivos"
+
+echo ""
+echo ">>> SERIAL (con cache)"
+if ! SERIAL_OUT=$(./bow_serial "$URLS" "$SERIAL_CSV" "$CACHE_DIR" 2>&1); then
+    echo "$SERIAL_OUT"
+    fail "La corrida serial fallo."
+fi
 echo "$SERIAL_OUT" | tail -7
 
-# Extraccion de los tiempos del serial para usarlos como denominador del
-# speed-up de cada q MPI.
-T_SERIAL_DL=$(extract "$SERIAL_OUT" "Tiempo descarga")
-T_SERIAL_CP=$(extract "$SERIAL_OUT" "Tiempo computo")
-T_SERIAL_IO=$(extract "$SERIAL_OUT" "Tiempo io")
-T_SERIAL_TT=$(extract "$SERIAL_OUT" "Tiempo total")
-V_SERIAL=$(extract_int "$SERIAL_OUT" "Vocabulario")
+T_SERIAL_DOWNLOAD=$(extract_time "$SERIAL_OUT" "Tiempo descarga")
+T_SERIAL_COMPUTE=$(extract_time "$SERIAL_OUT" "Tiempo computo")
+T_SERIAL_IO=$(extract_time "$SERIAL_OUT" "Tiempo io")
+T_SERIAL_TOTAL=$(extract_time "$SERIAL_OUT" "Tiempo total")
+require_time "$T_SERIAL_DOWNLOAD" "serial descarga"
+require_time "$T_SERIAL_COMPUTE" "serial computo"
+require_time "$T_SERIAL_IO" "serial io"
+require_time "$T_SERIAL_TOTAL" "serial total"
 
-echo ""
-echo ">>> Vocabulario del serial: ${V_SERIAL} palabras unicas"
+echo "q,T_total,T_download,T_tokenize,T_vocab_comm,T_matrix,T_compute,T_io,T_serial_total,T_serial_compute,speedup_total,speedup_compute,efficiency_compute" > "$RESULTS_CSV"
 
-# ---------------------------------------------------------------------------
-# SWEEP PARALELO: una corrida MPI por cada q de $QS.
-# ---------------------------------------------------------------------------
-RESULTS_CSV="benchmark_results.csv"
-# Header del CSV de resultados (una fila por q).
-echo "q,t_total_par,t_download_par,t_compute_par,t_io_par,t_total_serial,t_compute_serial,speedup_total,speedup_compute,eficiencia_compute,vocab_serial,vocab_par" > "$RESULTS_CSV"
-
-# Tabla en pantalla para consumo humano.
-printf "\n%-3s | %-9s | %-9s | %-9s | %-12s | %-13s | %-10s | %-7s\n" \
-       "q" "T_tot(s)" "T_dl(s)" "T_cp(s)" "S_total" "S_compute" "Eff_compute" "Vocab"
-printf -- "----+-----------+-----------+-----------+--------------+---------------+------------+--------\n"
+printf "\n%-3s | %-10s | %-10s | %-10s | %-10s | %-10s | %-10s | %-12s | %-10s\n" \
+       "q" "T_total" "T_down" "T_tok" "T_vocab" "T_matrix" "T_comp" "S_comp" "Eff"
+printf -- "----+------------+------------+------------+------------+------------+------------+--------------+------------\n"
 
 for q in $QS; do
-    # --oversubscribe permite que mpirun lance mas procesos que cores fisicos.
-    # En equipos con pocos nucleos es necesario para probar q grandes.
-    # 2>&1 fusiona stderr con stdout para no perder mensajes de error.
-    MPI_OUT=$(mpirun --oversubscribe -np "$q" ./bow_mpi "$URLS" bow_mpi.csv "$CACHE_DIR" 2>&1)
-
-    # Mismos campos que en el serial, pero para esta corrida paralela.
-    T_DL=$(extract "$MPI_OUT" "Tiempo descarga")
-    T_CP=$(extract "$MPI_OUT" "Tiempo computo")
-    T_IO=$(extract "$MPI_OUT" "Tiempo io")
-    T_TT=$(extract "$MPI_OUT" "Tiempo total")
-    V_PAR=$(extract_int "$MPI_OUT" "Vocabulario")
-
-    # Speed-ups: T_serial / T_mpi. bc -l para aritmetica flotante.
-    S_TOTAL=$(echo   "scale=3; $T_SERIAL_TT / $T_TT" | bc -l)
-    S_COMP=$(echo    "scale=3; $T_SERIAL_CP / $T_CP" | bc -l)
-    # Eficiencia paralela: S_compute / q. Ideal=1 (escalamiento lineal).
-    EFF_COMP=$(echo  "scale=3; $S_COMP / $q"        | bc -l)
-
-    # Linea de tabla + linea de CSV.
-    printf "%-3s | %-9s | %-9s | %-9s | %-12s | %-13s | %-10s | %-7s\n" \
-           "$q" "$T_TT" "$T_DL" "$T_CP" "${S_TOTAL}x" "${S_COMP}x" "$EFF_COMP" "$V_PAR"
-    echo "$q,$T_TT,$T_DL,$T_CP,$T_IO,$T_SERIAL_TT,$T_SERIAL_CP,$S_TOTAL,$S_COMP,$EFF_COMP,$V_SERIAL,$V_PAR" >> "$RESULTS_CSV"
-
-    # Sanity check: la matriz MPI debe ser bit-a-bit igual a la serial.
-    # Si difiere, hay un bug en el balanceo / reordenamiento.
-    if ! diff -q bow_serial.csv bow_mpi.csv > /dev/null 2>&1; then
-        echo "  ⚠  Las matrices difieren con q=$q"
+    echo ""
+    echo ">>> MPI q=$q"
+    if ! MPI_OUT=$(mpirun $MPIRUN_EXTRA_ARGS -np "$q" ./bow_mpi "$URLS" "$MPI_CSV" "$CACHE_DIR" 2>&1); then
+        echo "$MPI_OUT"
+        fail "La corrida MPI fallo para q=$q."
     fi
+
+    T_DOWNLOAD=$(extract_time "$MPI_OUT" "Tiempo descarga")
+    T_TOKENIZE=$(extract_time "$MPI_OUT" "Tiempo tokenize")
+    T_VOCAB=$(extract_time "$MPI_OUT" "Tiempo vocab(comm)")
+    T_MATRIX=$(extract_time "$MPI_OUT" "Tiempo matriz")
+    T_COMPUTE=$(extract_time "$MPI_OUT" "Tiempo computo")
+    T_IO=$(extract_time "$MPI_OUT" "Tiempo io")
+    T_TOTAL=$(extract_time "$MPI_OUT" "Tiempo total")
+
+    require_time "$T_DOWNLOAD" "MPI descarga q=$q"
+    require_time "$T_TOKENIZE" "MPI tokenize q=$q"
+    require_time "$T_VOCAB" "MPI vocab q=$q"
+    require_time "$T_MATRIX" "MPI matriz q=$q"
+    require_time "$T_COMPUTE" "MPI computo q=$q"
+    require_time "$T_IO" "MPI io q=$q"
+    require_time "$T_TOTAL" "MPI total q=$q"
+
+    if ! diff -q "$SERIAL_CSV" "$MPI_CSV" >/dev/null 2>&1; then
+        fail "MPI no produjo el mismo CSV que serial para q=$q."
+    fi
+
+    SPEEDUP_TOTAL=$(ratio "$T_SERIAL_TOTAL" "$T_TOTAL")
+    SPEEDUP_COMPUTE=$(ratio "$T_SERIAL_COMPUTE" "$T_COMPUTE")
+    EFFICIENCY_COMPUTE=$(ratio "$SPEEDUP_COMPUTE" "$q")
+
+    printf "%-3s | %-10s | %-10s | %-10s | %-10s | %-10s | %-10s | %-12sx | %-10s\n" \
+           "$q" "$T_TOTAL" "$T_DOWNLOAD" "$T_TOKENIZE" "$T_VOCAB" \
+           "$T_MATRIX" "$T_COMPUTE" "$SPEEDUP_COMPUTE" "$EFFICIENCY_COMPUTE"
+
+    echo "$q,$T_TOTAL,$T_DOWNLOAD,$T_TOKENIZE,$T_VOCAB,$T_MATRIX,$T_COMPUTE,$T_IO,$T_SERIAL_TOTAL,$T_SERIAL_COMPUTE,$SPEEDUP_TOTAL,$SPEEDUP_COMPUTE,$EFFICIENCY_COMPUTE" >> "$RESULTS_CSV"
 done
 
 echo ""
 echo "============================================="
-echo " Notas para el reporte:"
-echo "   * S_total   incluye descarga: superlineal posible (no Amdahl)"
-echo "   * S_compute es el speed-up CPU puro: SÍ acotado por Amdahl"
-echo "   * Resultados completos en $RESULTS_CSV"
+echo " Resultados completos: $RESULTS_CSV"
+echo " Validacion: cada corrida MPI produjo el mismo CSV que serial."
+echo " speedup_total = T_serial_total / T_parallel_total"
+echo " speedup_compute = T_serial_compute / T_parallel_compute"
+echo " efficiency_compute = speedup_compute / q"
 echo "============================================="

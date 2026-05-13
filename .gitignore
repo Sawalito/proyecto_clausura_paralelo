@@ -1,21 +1,11 @@
-# --- Ejecutables y Binarios ---
-# Ignora archivos sin extensión (comúnmente binarios de C++ en Linux)
-*
-!*/
-!*.*
-!Makefile
-!CMakeLists.txt
-!LICENSE
-!README
+# Ejecutables generados por el proyecto
+bow_serial
+bow_mpi
 
-# Extensiones de objetos y bibliotecas
+# Objetos y binarios temporales de compilacion
 *.o
 *.obj
 *.out
-*.so
-*.a
-*.lib
-*.dll
 *.exe
 *.dylib
 *.gch
@@ -28,54 +18,28 @@ core.*
 *.stackdump
 vgcore.*
 
-# --- Resultados y Datos ---
-# Ignora específicamente los archivos de datos generados
+# Resultados generados
+Results/*.csv
+!Results/.gitkeep
 *.csv
-*.dat
 *.log
-*.results
-*.tsv
+logs
+logs/
 
-# --- Cache del Proyecto ---
+# Cache local de descargas
 .bow_cache/
-*.cache
+.cache/
 
-# --- Directorios de Compilación ---
+# Directorios de compilacion
 build/
 bin/
 dist/
-obj/
-.cache/
 
-# --- CUDA & Paralelo ---
-# Archivos temporales de compilación de NVIDIA
-*.i
-*.ii
-*.gpu
-*.ptx
-*.cubin
-*.fatbin
-
-# Archivos temporales de MPI
-*.btr
-
-# --- Entorno de Desarrollo ---
-.vscode/
-.idea/
-.claude/
+# Archivos temporales de editores y sistema
+*~
 *.swp
 *.swo
-*.swn
-*~
-.*.kate-swp
-
-# --- Archivos de Sistema ---
+.vscode/
+.idea/
 .DS_Store
 Thumbs.db
-desktop.ini
-
-# --- Backups y temporales ---
-*.bak
-*.tmp
-*.orig
-*.rej
