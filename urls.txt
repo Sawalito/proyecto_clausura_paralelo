@@ -2,15 +2,10 @@
 # Tamanios variados (~150 KB a ~5 MB) para tener trabajo suficiente que MPI
 # pueda paralelizar. Antes habia 6 con duplicados y una linea concatenada,
 # lo que dejaba el dataset demasiado pequenio para superar el overhead MPI.
-https://www.gutenberg.org/cache/epub/1342/pg1342.txt
-https://www.gutenberg.org/cache/epub/11/pg11.txt
 https://www.gutenberg.org/cache/epub/84/pg84.txt
-https://www.gutenberg.org/cache/epub/345/pg345.txt
-https://www.gutenberg.org/cache/epub/1661/pg1661.txt
-https://www.gutenberg.org/cache/epub/174/pg174.txt
-https://www.gutenberg.org/cache/epub/768/pg768.txt
 https://www.gutenberg.org/cache/epub/2701/pg2701.txt
+https://www.gutenberg.org/cache/epub/1342/pg1342.txt
+https://www.gutenberg.org/cache/epub/1184/pg1184.txt
+https://www.gutenberg.org/cache/epub/1513/pg1513.txt
+https://www.gutenberg.org/cache/epub/25851/pg25851.txt
 https://www.gutenberg.org/cache/epub/2554/pg2554.txt
-https://www.gutenberg.org/cache/epub/1232/pg1232.txt
-https://www.gutenberg.org/cache/epub/5200/pg5200.txt
-https://www.gutenberg.org/cache/epub/100/pg100.txt

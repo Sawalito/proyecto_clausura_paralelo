@@ -308,7 +308,13 @@ tokenize_and_count_fast(const std::string& raw_text) {
     std::unordered_map<std::string, int> counts;
     counts.reserve(20000);
 
-    std::string body = strip_gutenberg_metadata(raw_text);
+    // NOTA: NO recortamos el preambulo/epilogo de Project Gutenberg para que
+    // el conteo de cada palabra coincida bit-a-bit con el conteo literal del
+    // archivo (verificable con grep). El trade-off es que el vocabulario
+    // incluye algunas palabras de boilerplate (Project, Gutenberg, License,
+    // Foundation, etc.). Si quisieras filtrarlas, llamar aqui a
+    // strip_gutenberg_metadata(raw_text) y usar el resultado como `body`.
+    const std::string& body = raw_text;
     const char* p   = body.data();        // cursor
     const char* end = p + body.size();    // fin del buffer
 
